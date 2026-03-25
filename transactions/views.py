@@ -83,7 +83,7 @@ class DashboardView(APIView):
         recent_transactions = transactions.order_by('-date')[:4]
 
         data = {
-            'first_name':          user.first_name or user.email.split('@')[0],
+            'first_name':          (user.profile.username if hasattr(user, 'profile') and user.profile.username else user.first_name) or user.email.split('@')[0],
             'avatar_url':          user.profile.avatar_url if hasattr(user, 'profile') else None,
             'total_balance':       total_balance,
             'income_total':        income_total,
@@ -735,6 +735,9 @@ class ExportTransactionsView(APIView):
             return response
 
         transactions = Transaction.objects.filter(user=request.user).select_related('category').order_by('-date')
+
+        if not transactions.exists():
+            return Response({'error': 'No transactions to export'}, status=404)
 
         if export_format == 'csv':
             content = generate_csv_export(transactions)

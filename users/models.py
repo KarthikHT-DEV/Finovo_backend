@@ -68,6 +68,8 @@ class UserProfile(models.Model):
         help_text='User phone number, e.g. +1 (555) 000-1234')
     username = models.CharField(max_length=50, blank=True, default='',
         help_text='Display username chosen at registration.')
+    currency_symbol = models.CharField(max_length=5, default='₹',
+        help_text='Currency symbol for formatted notifications (e.g. ₹ or $)')
     
     # OTP fields for email verification and forgot password
     otp_code = models.CharField(max_length=6, blank=True, null=True)

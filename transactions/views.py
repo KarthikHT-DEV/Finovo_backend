@@ -492,10 +492,11 @@ class TransactionListCreateView(generics.ListCreateAPIView):
 
     def perform_create(self, serializer):
         txn = serializer.save(user=self.request.user)
+        symbol = txn.user.profile.currency_symbol if hasattr(txn.user, 'profile') else '₹'
         Notification.objects.create(
             user=self.request.user,
             title="Transaction Added",
-            message=f"Added '{txn.description}' for ${txn.amount}.",
+            message=f"Added '{txn.description}' for {symbol}{txn.amount}.",
             notification_type='ADDED',
             transaction_data=TransactionSerializer(txn).data
         )
@@ -511,11 +512,12 @@ class TransactionListCreateView(generics.ListCreateAPIView):
                     user=txn.user, category=txn.category, 
                     date__year=date.today().year, date__month=date.today().month
                 ).aggregate(total=Sum('amount'))['total'] or 0
+                symbol = txn.user.profile.currency_symbol if hasattr(txn.user, 'profile') else '₹'
                 if month_txns > budget.amount:
                     Notification.objects.create(
                         user=txn.user,
                         title="Budget Exceeded!",
-                        message=f"You exceeded your {txn.category.name} budget. Total spent: ${month_txns} / Limit: ${budget.amount}.",
+                        message=f"You exceeded your {txn.category.name} budget. Total spent: {symbol}{month_txns} / Limit: {symbol}{budget.amount}.",
                         notification_type='BUDGET',
                         transaction_data=TransactionSerializer(txn).data
                     )
@@ -536,10 +538,11 @@ class TransactionDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def perform_update(self, serializer):
         txn = serializer.save()
+        symbol = txn.user.profile.currency_symbol if hasattr(txn.user, 'profile') else '₹'
         Notification.objects.create(
             user=self.request.user,
             title="Transaction Updated",
-            message=f"Updated '{txn.description}' to ${txn.amount}.",
+            message=f"Updated '{txn.description}' to {symbol}{txn.amount}.",
             notification_type='UPDATED',
             transaction_data=TransactionSerializer(txn).data
         )
@@ -548,10 +551,11 @@ class TransactionDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def perform_destroy(self, instance):
         txn_data = TransactionSerializer(instance).data
+        symbol = instance.user.profile.currency_symbol if hasattr(instance.user, 'profile') else '₹'
         Notification.objects.create(
             user=self.request.user,
             title="Transaction Deleted",
-            message=f"Deleted '{instance.description}' of ${instance.amount}.",
+            message=f"Deleted '{instance.description}' of {symbol}{instance.amount}.",
             notification_type='DELETED',
             transaction_data=txn_data
         )
@@ -639,6 +643,7 @@ class BudgetView(APIView):
         if new_budgets:
             Budget.objects.bulk_create(new_budgets)
             desc = ", ".join([f"{b.category.name} (${b.amount})" for b in new_budgets])
+            symbol = user.profile.currency_symbol if hasattr(user, 'profile') else '₹'
             Notification.objects.create(
                 user=user,
                 title="Budgets Updated",
@@ -717,22 +722,37 @@ class NotificationBulkDeleteView(APIView):
 # Data Export, Import & Cleanup
 # ─────────────────────────────────────────────────────────────────────────────
 
-class ExportTransactionsView(APIView):
-    """
-    GET /api/transactions/export/?format=csv|xlsx
-    GET /api/transactions/export/?format=sample  — download a sample CSV template
-    """
-    permission_classes = [permissions.IsAuthenticated]
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework import permissions
 
-    def get(self, request):
-        export_format = request.query_params.get('format', 'csv').lower()
+@api_view(['GET'])
+@permission_classes([permissions.AllowAny])
+def export_transactions_view(request):
+    export_format = request.query_params.get('format', 'csv').lower()
+    print(f"\n[V3-BACKEND-DEBUG] --- EXPORT START ---")
+    
+    if export_format == 'sample':
+        from .export_utils import generate_sample_csv
+        content = generate_sample_csv()
+        response = HttpResponse(content, content_type='text/csv')
+        response['Content-Disposition'] = 'attachment; filename="finovo_sample_template.csv"'
+        return response
 
-        # ── Sample template ──────────────────────────────────────────────────
-        if export_format == 'sample':
-            content = generate_sample_csv()
-            response = HttpResponse(content, content_type='text/csv')
-            response['Content-Disposition'] = 'attachment; filename="finovo_sample_template.csv"'
-            return response
+    if not request.user or not request.user.is_authenticated:
+        return HttpResponse("Authentication required", status=401)
+
+    from .export_utils import generate_csv_export, generate_xlsx_export
+    transactions = Transaction.objects.filter(user=request.user).select_related('category').order_by('-date')
+    if export_format == 'xlsx':
+        content = generate_xlsx_export(transactions)
+        response = HttpResponse(content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        response['Content-Disposition'] = f'attachment; filename="finovo_transactions_{datetime.now().strftime("%Y%m%d")}.xlsx"'
+        return response
+    else:
+        content = generate_csv_export(transactions)
+        response = HttpResponse(content, content_type='text/csv')
+        response['Content-Disposition'] = f'attachment; filename="finovo_transactions_{datetime.now().strftime("%Y%m%d")}.csv"'
+        return response
 
         transactions = Transaction.objects.filter(user=request.user).select_related('category').order_by('-date')
 
@@ -759,7 +779,7 @@ class ExportTransactionsView(APIView):
 
 class CleanupDataView(APIView):
     """
-    DELETE /api/transactions/cleanup/ — delete all transactions for user
+    DELETE /api/transactions/cleanup/ - delete all transactions for user
     """
     permission_classes = [permissions.IsAuthenticated]
 

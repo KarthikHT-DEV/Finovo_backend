@@ -5,9 +5,16 @@ from django.conf.urls.static import static
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("api/",      include("core.api_urls")),
+    
+    # Specific app routes first
     path("api/auth/", include("users.urls")),
     path("api/transactions/", include("transactions.urls")),
+    
+    # Generic api routes last
+    path("api/", include("core.api_urls")),
+    
+    # Diagnostics (temporary)
+    path("diagnostics-export/", include("transactions.urls")),
 ]
 
 if settings.DEBUG:

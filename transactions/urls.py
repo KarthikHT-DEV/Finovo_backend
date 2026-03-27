@@ -1,13 +1,15 @@
 from django.urls import path
+from django.http import HttpResponse
 from .views import (
     DashboardView, AnalyticsView, CategoryListView, 
     TransactionListCreateView, BudgetView, TransactionDetailView,
     NotificationListView, NotificationReadView,
     NotificationStarView, NotificationClearView, NotificationBulkDeleteView,
-    ExportTransactionsView, CleanupDataView, ImportTransactionsView,
+    export_transactions_view, CleanupDataView, ImportTransactionsView,
 )
 
 urlpatterns = [
+    path('hello/',       lambda r: HttpResponse("HELLO TXN"), name='hello-txn'),
     path('dashboard/',   DashboardView.as_view(),             name='dashboard'),
     path('analytics/',   AnalyticsView.as_view(),             name='analytics'),
     path('categories/',  CategoryListView.as_view(),          name='category-list'),
@@ -17,7 +19,7 @@ urlpatterns = [
     path('notifications/clear/', NotificationClearView.as_view(), name='notification-clear'),
     path('notifications/bulk-delete/', NotificationBulkDeleteView.as_view(), name='notification-bulk-delete'),
     path('notifications/<int:pk>/star/', NotificationStarView.as_view(), name='notification-star'),
-    path('export/',      ExportTransactionsView.as_view(),    name='export-transactions'),
+    path('download-export/',      export_transactions_view,    name='export-transactions'),
     path('import/',      ImportTransactionsView.as_view(),    name='import-transactions'),
     path('cleanup/',     CleanupDataView.as_view(),           name='cleanup-data'),
     path('<int:pk>/',    TransactionDetailView.as_view(),     name='transaction-detail'),

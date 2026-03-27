@@ -3,9 +3,9 @@ from django.http import HttpResponse
 from .views import (
     DashboardView, AnalyticsView, CategoryListView, 
     TransactionListCreateView, BudgetView, TransactionDetailView,
+    TransactionFavoriteView, TransactionUnfavoriteView,
     NotificationListView, NotificationReadView,
     NotificationStarView, NotificationClearView, NotificationBulkDeleteView,
-    export_transactions_view, CleanupDataView, ImportTransactionsView,
 )
 
 urlpatterns = [
@@ -19,9 +19,8 @@ urlpatterns = [
     path('notifications/clear/', NotificationClearView.as_view(), name='notification-clear'),
     path('notifications/bulk-delete/', NotificationBulkDeleteView.as_view(), name='notification-bulk-delete'),
     path('notifications/<int:pk>/star/', NotificationStarView.as_view(), name='notification-star'),
-    path('download-export/',      export_transactions_view,    name='export-transactions'),
-    path('import/',      ImportTransactionsView.as_view(),    name='import-transactions'),
-    path('cleanup/',     CleanupDataView.as_view(),           name='cleanup-data'),
+    path('<int:pk>/favorite/', TransactionFavoriteView.as_view(), name='transaction-favorite'),
+    path('<int:pk>/unfavorite/', TransactionUnfavoriteView.as_view(), name='transaction-unfavorite'),
     path('<int:pk>/',    TransactionDetailView.as_view(),     name='transaction-detail'),
     path('',             TransactionListCreateView.as_view(), name='transaction-list-create'),
 ]

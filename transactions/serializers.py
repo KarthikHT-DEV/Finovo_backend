@@ -16,7 +16,7 @@ class TransactionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Transaction
-        fields = ['id', 'category', 'category_id', 'amount', 'description', 'payment_method', 'date', 'created_at']
+        fields = ['id', 'category', 'category_id', 'amount', 'description', 'payment_method', 'date', 'is_favorite', 'created_at']
 
 class DashboardSerializer(serializers.Serializer):
     """

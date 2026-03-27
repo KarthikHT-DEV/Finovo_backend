@@ -20,11 +20,6 @@ from django.http import HttpResponse
 
 from .models import Category, Transaction, Budget, Notification
 from .serializers import DashboardSerializer, CategorySerializer, TransactionSerializer
-from .export_utils import (
-    generate_csv_export, generate_xlsx_export,
-    parse_csv_import, parse_xlsx_import,
-    generate_sample_csv,
-)
 from rest_framework.parsers import MultiPartParser, FormParser
 from core.dynamo_service import DynamoDBService
 
@@ -473,6 +468,7 @@ class TransactionListCreateView(generics.ListCreateAPIView):
         payment_methods = self.request.query_params.get('payment_method')
         start_date = self.request.query_params.get('start_date')
         end_date = self.request.query_params.get('end_date')
+        is_favorite = self.request.query_params.get('is_favorite')
 
         if category_ids:
             cat_list = [c.strip() for c in category_ids.split(',') if c.strip()]
@@ -487,6 +483,11 @@ class TransactionListCreateView(generics.ListCreateAPIView):
             queryset = queryset.filter(date__date__gte=start_date)
         if end_date:
             queryset = queryset.filter(date__date__lte=end_date)
+        if is_favorite is not None:
+            if is_favorite.lower() == 'true':
+                queryset = queryset.filter(is_favorite=True)
+            elif is_favorite.lower() == 'false':
+                queryset = queryset.filter(is_favorite=False)
             
         return queryset
 
@@ -717,198 +718,34 @@ class NotificationBulkDeleteView(APIView):
         deleted_count, _ = Notification.objects.filter(user=request.user, pk__in=ids).delete()
         return Response({'deleted': deleted_count})
 
-
-# ─────────────────────────────────────────────────────────────────────────────
-# Data Export, Import & Cleanup
-# ─────────────────────────────────────────────────────────────────────────────
-
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework import permissions
-
-@api_view(['GET'])
-@permission_classes([permissions.AllowAny])
-def export_transactions_view(request):
-    export_format = request.query_params.get('format', 'csv').lower()
-    print(f"\n[V3-BACKEND-DEBUG] --- EXPORT START ---")
-    
-    if export_format == 'sample':
-        from .export_utils import generate_sample_csv
-        content = generate_sample_csv()
-        response = HttpResponse(content, content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="finovo_sample_template.csv"'
-        return response
-
-    if not request.user or not request.user.is_authenticated:
-        return HttpResponse("Authentication required", status=401)
-
-    from .export_utils import generate_csv_export, generate_xlsx_export
-    transactions = Transaction.objects.filter(user=request.user).select_related('category').order_by('-date')
-    if export_format == 'xlsx':
-        content = generate_xlsx_export(transactions)
-        response = HttpResponse(content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-        response['Content-Disposition'] = f'attachment; filename="finovo_transactions_{datetime.now().strftime("%Y%m%d")}.xlsx"'
-        return response
-    else:
-        content = generate_csv_export(transactions)
-        response = HttpResponse(content, content_type='text/csv')
-        response['Content-Disposition'] = f'attachment; filename="finovo_transactions_{datetime.now().strftime("%Y%m%d")}.csv"'
-        return response
-
-        transactions = Transaction.objects.filter(user=request.user).select_related('category').order_by('-date')
-
-        if not transactions.exists():
-            return Response({'error': 'No transactions to export'}, status=404)
-
-        if export_format == 'csv':
-            content = generate_csv_export(transactions)
-            response = HttpResponse(content, content_type='text/csv; charset=utf-8')
-            response['Content-Disposition'] = f'attachment; filename="finovo_transactions_{date.today()}.csv"'
-            return response
-
-        elif export_format == 'xlsx':
-            content = generate_xlsx_export(transactions)
-            response = HttpResponse(
-                content,
-                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-            )
-            response['Content-Disposition'] = f'attachment; filename="finovo_transactions_{date.today()}.xlsx"'
-            return response
-
-        return Response({'error': 'Unsupported format. Use ?format=csv or ?format=xlsx'}, status=400)
-
-
-class CleanupDataView(APIView):
+class TransactionFavoriteView(APIView):
     """
-    DELETE /api/transactions/cleanup/ - delete all transactions for user
+    POST /api/transactions/<id>/favorite/
     """
     permission_classes = [permissions.IsAuthenticated]
 
-    def delete(self, request):
-        deleted_tx, _ = Transaction.objects.filter(user=request.user).delete()
-        return Response({
-            'message': 'Data cleared successfully',
-            'deleted_transactions': deleted_tx
-        })
-
-
-class ImportTransactionsView(APIView):
-    """
-    POST /api/transactions/import/
-    Body: multipart/form-data with 'file' field (.csv or .xlsx)
-
-    Returns:
-        {
-          "success_count": N,
-          "failed_count": M,
-          "failed_rows": [ { "row": 3, "reason": "..." }, ... ]
-        }
-    """
-    permission_classes = [permissions.IsAuthenticated]
-    parser_classes = [MultiPartParser, FormParser]
-
-    # File size limit: 5 MB
-    MAX_FILE_SIZE = 5 * 1024 * 1024
-
-    def post(self, request):
-        file_obj = request.FILES.get('file')
-        if not file_obj:
-            return Response({'error': 'No file provided'}, status=400)
-
-        # ── File size check ─────────────────────────────────────────────────
-        if file_obj.size > self.MAX_FILE_SIZE:
-            return Response({'error': 'File too large. Maximum allowed size is 5 MB.'}, status=400)
-
-        filename = file_obj.name.lower()
+    def post(self, request, pk):
         try:
-            if filename.endswith('.csv'):
-                data_list = parse_csv_import(file_obj)
-            elif filename.endswith('.xlsx'):
-                data_list = parse_xlsx_import(file_obj)
-            else:
-                return Response(
-                    {'error': 'Unsupported file format. Please upload a .csv or .xlsx file.'},
-                    status=400
-                )
-        except Exception as e:
-            return Response({'error': f'Could not read file: {str(e)}'}, status=400)
+            txn = Transaction.objects.get(pk=pk, user=request.user)
+            txn.is_favorite = True
+            txn.save()
+            return Response({'status': 'success', 'is_favorite': True})
+        except Transaction.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
 
-        if not data_list:
-            return Response({'error': 'The file is empty or has no data rows.'}, status=400)
+class TransactionUnfavoriteView(APIView):
+    """
+    POST /api/transactions/<id>/unfavorite/
+    """
+    permission_classes = [permissions.IsAuthenticated]
 
-        # ── Category cache: avoid repeated DB hits ─────────────────────────
-        # Pre-load all categories available to this user
-        existing_categories = {
-            (cat.name.lower(), cat.type): cat
-            for cat in Category.objects.filter(
-                Q(user=request.user) | Q(user__isnull=True)
-            )
-        }
-        new_categories = {}
+    def post(self, request, pk):
+        try:
+            txn = Transaction.objects.get(pk=pk, user=request.user)
+            txn.is_favorite = False
+            txn.save()
+            return Response({'status': 'success', 'is_favorite': False})
+        except Transaction.DoesNotExist:
+            return Response({'error': 'Not found'}, status=404)
 
-        to_create = []
-        failed_rows = []
 
-        for row in data_list:
-            row_num = row.get('row_num', '?')
-
-            # ── Collect validation errors from normalisation ──
-            errors = row.get('errors', [])
-
-            if row.get('amount') is None:
-                # amount parsing already added an error; skip
-                failed_rows.append({'row': row_num, 'reason': '; '.join(errors)})
-                continue
-
-            if errors:
-                # Non-fatal validation issues (e.g. bad date defaulted) — still import
-                # but only skip if description is missing
-                if not row.get('description'):
-                    failed_rows.append({'row': row_num, 'reason': '; '.join(errors)})
-                    continue
-
-            # ── Category resolution ──────────────────────────────────────────
-            cat_name = row['category_name']
-            cat_type = row['category_type']   # 'INCOME' or 'EXPENSE'
-            cache_key = (cat_name.lower(), cat_type)
-
-            if cache_key in existing_categories:
-                category = existing_categories[cache_key]
-            elif cache_key in new_categories:
-                category = new_categories[cache_key]
-            else:
-                # Create a user-specific category on the fly
-                category = Category(
-                    user=request.user,
-                    name=cat_name,
-                    type=cat_type,
-                    icon_name='help-circle-outline',
-                    color='#94A3B8'
-                )
-                category.save()   # save individually so FK works in Transaction
-                new_categories[cache_key] = category
-                existing_categories[cache_key] = category
-
-            # ── Build Transaction object ─────────────────────────────────────
-            to_create.append(Transaction(
-                user=request.user,
-                category=category,
-                amount=Decimal(str(row['amount'])),
-                description=row['description'],
-                payment_method=row['payment_method'],
-                date=row['date'],
-            ))
-
-        # ── Bulk insert in chunks of 500 ────────────────────────────────────
-        CHUNK_SIZE = 500
-        success_count = 0
-        for i in range(0, len(to_create), CHUNK_SIZE):
-            chunk = to_create[i:i + CHUNK_SIZE]
-            Transaction.objects.bulk_create(chunk)
-            success_count += len(chunk)
-
-        return Response({
-            'message': f'Import complete. {success_count} transactions imported.',
-            'success_count': success_count,
-            'failed_count': len(failed_rows),
-            'failed_rows': failed_rows,
-        })

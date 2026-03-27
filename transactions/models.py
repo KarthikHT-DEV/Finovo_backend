@@ -41,6 +41,7 @@ class Transaction(models.Model):
     description = models.CharField(max_length=255)
     payment_method = models.CharField(max_length=20, choices=PaymentMethod.choices, default=PaymentMethod.CARD)
     date = models.DateTimeField()
+    is_favorite = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

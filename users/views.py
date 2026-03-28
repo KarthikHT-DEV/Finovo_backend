@@ -1,24 +1,26 @@
 from decimal import Decimal
+import logging
+import random
+import string
 
 from django.contrib.auth import get_user_model
+from django.conf import settings
+from django.core.mail import send_mail
+from django.utils import timezone
+from datetime import timedelta
+
 from rest_framework import permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from django.utils import timezone
-from datetime import timedelta
-from django.core.mail import send_mail
-from django.conf import settings
 from .email_utils import send_otp_email
-import random
-import string
-
 from .serializers import LoginSerializer, RegisterSerializer, ProfileSerializer
 from .models import UserProfile
 
 User = get_user_model()
+logger = logging.getLogger(__name__)
 
 
 class LoginView(APIView):
@@ -119,7 +121,7 @@ class RegisterView(APIView):
             
             send_otp_email(user, otp, 'verification')
         except Exception as e:
-            print(f"Error sending welcome OTP: {e}")
+            logger.warning("Failed to send welcome OTP to %s: %s", user.email, e)
             profile.save() # Ensure profile is saved even if mail fails
 
         refresh = RefreshToken.for_user(user)
@@ -166,9 +168,8 @@ class ProfileView(APIView):
         profile = self._get_or_create_profile(user)
 
         data = request.data
-        print(f"DEBUG: Profile update for {user.email}")
-        print(f"DEBUG: Received data keys: {list(data.keys())}")
-        print(f"DEBUG: Received files: {list(request.FILES.keys())}")
+        logger.debug("Profile update for %s — keys=%s, files=%s",
+                     user.email, list(data.keys()), list(request.FILES.keys()))
 
         # Update user fields
         if 'first_name' in data:

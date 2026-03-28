@@ -63,6 +63,7 @@ INSTALLED_APPS = [
 AUTH_USER_MODEL = "users.CustomUser"
 
 MIDDLEWARE = [
+    "core.middleware.HealthCheckMiddleware",              # ALB health — before host check
     "corsheaders.middleware.CorsMiddleware",          # Must be first
     "django.middleware.security.SecurityMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",     # Serve static files
